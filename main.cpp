@@ -5,6 +5,7 @@
 #include <iostream>
 #include <chrono>
 #include <string>
+#include <unordered_map>
 #include <FastMagicBitboards.hpp>
 
 typedef uint64_t bitboard;
@@ -190,6 +191,7 @@ struct position
 private:
 
 	color to_move{ e_white };
+	std::vector<std::tuple<bitboard, move>> cache{};
 
 	bitboard boards[12]
 	{
@@ -725,14 +727,45 @@ public:
 		return moves;
 	}
 
-	void pop_lsb( bitboard& bits )
+	bool is_king_in_check( bool enemy = false )
 	{
-		bits &= bits - 1;
+		auto moves{ get_all_moves( !enemy ) };
+
+		for ( auto m : moves )
+		{
+			if ( m.to == _bitscanf( enemy ? get_enemy_king_board() : get_king_board() ) )
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
-	std::vector<move> get_all_moves()
+	bitboard get_pinned_board( bool enemy = false )
+	{
+		bitboard pinned{};
+		auto moves{ get_all_moves( enemy ) };
+
+		for ( auto m : moves )
+		{
+			make_move( m );
+
+			if ( is_king_in_check( true ) )
+			{
+				pinned |= ( 1ull << m.from );
+			}
+
+			unmake_move();
+		}
+
+		return pinned;
+	}
+
+	std::vector<move> get_all_moves( bool enemy = false )
 	{
 		magic_init();
+		if ( enemy ) { to_move = to_move == e_white ? e_black : e_white; };
 
 		std::vector<move> moves{};
 		bitboard pawn_board{ get_pawn_board() };
@@ -784,7 +817,101 @@ public:
 			king_board = BitOperations::PopLSB( king_board );
 		}
 
+		if ( enemy ) { to_move = to_move == e_white ? e_black : e_white; };
 		return moves;
+	}
+
+	void make_move( move _move )
+	{
+		bitboard* board{};
+
+		switch ( _move.type )
+		{
+			case e_pawn:
+				board = to_move == e_white ? &boards[e_white_pawn] : &boards[e_black_pawn];
+				cache.push_back( std::tuple<bitboard, move>( *board, _move  ) );
+				*board &= ~_move.from;
+				*board |= _move.to;
+				break;
+
+			case e_knight:
+				board = to_move == e_white ? &boards[e_white_knight] : &boards[e_black_knight];
+				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
+				*board &= ~_move.from;
+				*board |= _move.to;
+				break;
+				
+			case e_bishop:
+				board = to_move == e_white ? &boards[e_white_bishop] : &boards[e_black_bishop];
+				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
+				*board &= ~_move.from;
+				*board |= _move.to;
+				break;
+
+			case e_rook:
+				board = to_move == e_white ? &boards[e_white_rook] : &boards[e_black_rook];
+				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
+				*board &= ~_move.from;
+				*board |= _move.to;
+				break;
+
+			case e_queen:
+				board = to_move == e_white ? &boards[e_white_queen] : &boards[e_black_queen];
+				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
+				*board &= ~_move.from;
+				*board |= _move.to;
+				break;
+
+			case e_king:
+				board = to_move == e_white ? &boards[e_white_king] : &boards[e_black_king];
+				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
+				*board &= ~_move.from;
+				*board |= _move.to;
+				break;
+		}
+
+		to_move = to_move == e_white ? e_black : e_white;
+	}
+
+	void unmake_move()
+	{
+		bitboard* board{};
+
+		switch ( std::get<1>( cache.back() ).type )
+		{
+		case e_pawn:
+			board = to_move == e_white ? &boards[e_white_pawn] : &boards[e_black_pawn];
+			*board = std::get<0>( cache.back() );
+			break;
+
+		case e_knight:
+			board = to_move == e_white ? &boards[e_white_knight] : &boards[e_black_knight];
+			*board = std::get<0>( cache.back() );
+			break;
+
+		case e_bishop:
+			board = to_move == e_white ? &boards[e_white_bishop] : &boards[e_black_bishop];
+			*board = std::get<0>( cache.back() );
+			break;
+
+		case e_rook:
+			board = to_move == e_white ? &boards[e_white_rook] : &boards[e_black_rook];
+			*board = std::get<0>( cache.back() );
+			break;
+
+		case e_queen:
+			board = to_move == e_white ? &boards[e_white_queen] : &boards[e_black_queen];
+			*board = std::get<0>( cache.back() );
+			break;
+
+		case e_king:
+			board = to_move == e_white ? &boards[e_white_king] : &boards[e_black_king];
+			*board = std::get<0>( cache.back() );
+			break;
+		}
+
+		to_move = to_move == e_white ? e_black : e_white;
+		cache.pop_back();
 	}
 };
 
