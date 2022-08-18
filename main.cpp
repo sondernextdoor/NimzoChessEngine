@@ -10,10 +10,6 @@
 
 typedef uint64_t bitboard;
 typedef uint8_t square;
-typedef uint8_t move_flags;
-
-const bitboard null_board{ bitboard( 0 ) };
-const bitboard one_board{ bitboard( 1 ) };
 
 enum board_type
 {
@@ -39,6 +35,16 @@ enum piece_type
 	e_rook,
 	e_queen,
 	e_king
+};
+
+enum piece_score
+{
+	e_pawn_score = 1,
+	e_knight_score = 3,
+	e_bishop_score = 3,
+	e_rook_score = 5,
+	e_queen_score = 9,
+	e_king_score = 100
 };
 
 enum color
@@ -100,7 +106,8 @@ struct move
 	square from;
 	square to;
 	piece_type type;
-	move_flags flags;
+	bool capture;
+	piece_type captured_type;
 };
 
 bitboard h_file_board
@@ -191,7 +198,8 @@ struct position
 private:
 
 	color to_move{ e_white };
-	std::vector<std::tuple<bitboard, move>> cache{};
+	std::vector<std::tuple<std::vector<bitboard>, move>> cache{};
+	bool magic_initialized{};
 
 	bitboard boards[12]
 	{
@@ -210,70 +218,66 @@ private:
 	};
 
 	FastMagicBitboards magic;
+	move alpha_move{};
 
 public:
 
-	uint8_t get_rank_file( square sq )
-	{
-		return sq >> 3;
-	}
-
-	bitboard get_pawn_board() const
+	bitboard& get_pawn_board()
 	{
 		return to_move == e_white ? boards[e_white_pawn] : boards[e_black_pawn];
 	}
 	
-	bitboard get_enemy_pawn_board() const
+	bitboard& get_enemy_pawn_board()
 	{
 		return to_move == e_white ? boards[e_black_pawn] : boards[e_white_pawn];
 	}
 
-	bitboard get_knight_board() const
+	bitboard& get_knight_board()
 	{
 		return to_move == e_white ? boards[e_white_knight] : boards[e_black_knight];
 	}
 	
-	bitboard get_enemy_knight_board() const
+	bitboard& get_enemy_knight_board()
 	{
 		return to_move == e_white ? boards[e_black_knight] : boards[e_white_knight];
 	}
 
-	bitboard get_bishop_board() const
+	bitboard& get_bishop_board()
 	{
 		return to_move == e_white ? boards[e_white_bishop] : boards[e_black_bishop];
 	}
 	
-	bitboard get_enemy_bishop_board() const
+	bitboard& get_enemy_bishop_board()
 	{
 		return to_move == e_white ? boards[e_black_bishop] : boards[e_white_bishop];
 	}
 
-	bitboard get_rook_board() const
+	bitboard& get_rook_board()
 	{
 		return to_move == e_white ? boards[e_white_rook] : boards[e_black_rook];
 	}
 	
-	bitboard get_enemy_rook_board() const
+	bitboard& get_enemy_rook_board()
 	{
 		return to_move == e_white ? boards[e_black_rook] : boards[e_white_rook];
 	}
 
-	bitboard get_queen_board() const
+	bitboard& get_queen_board()
 	{
 		return to_move == e_white ? boards[e_white_queen] : boards[e_black_queen];
 	}
 	
-	bitboard get_enemy_queen_board() const
+	bitboard& get_enemy_queen_board()
 	{
 		return to_move == e_white ? boards[e_black_queen] : boards[e_white_queen];
 	}
 
-	bitboard get_king_board() const
+	bitboard& get_king_board()
 	{
 		return to_move == e_white ? boards[e_white_king] : boards[e_black_king];
 	}
 	
-	bitboard get_enemy_king_board() const
+	bitboard& get_enemy_king_board()
 	{
 		return to_move == e_white ? boards[e_black_king] : boards[e_white_king];
 	}
@@ -300,14 +304,252 @@ public:
 		);
 	}
 
-	bitboard get_all_pieces()
+	bitboard get_all_pieces() const
 	{
 		return get_all_friendly_pieces() | get_all_enemy_pieces();
 	}
 
-	bitboard* get_all_boards()
+	bitboard get_pawn_attacks( bool enemy = false )
 	{
-		return boards;
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		bitboard attacks{};
+		std::vector<bitboard> board_moves{};
+		bitboard pawn_board{ get_pawn_board() };
+		bitboard friendly_pieces{ get_all_friendly_pieces() };
+		bitboard enemy_pieces{ get_all_enemy_pieces() };
+
+		while ( pawn_board )
+		{
+			if ( to_move == e_white )
+			{
+				board_moves.push_back( pawn_board << 8 & ~friendly_pieces & ~enemy_pieces );
+				board_moves.push_back( board_moves.back() << 8 & ~friendly_pieces & ~enemy_pieces );
+				board_moves.push_back( ( pawn_board & clear_file[e_file_H] ) << 9 & enemy_pieces );
+				board_moves.push_back( ( pawn_board & clear_file[e_file_A] ) << 7 & enemy_pieces );
+			}
+			else
+			{
+				board_moves.push_back( pawn_board >> 8 & ~friendly_pieces & ~enemy_pieces );
+				board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+				board_moves.push_back( ( pawn_board & clear_file[e_file_H] ) >> 9 & enemy_pieces );
+				board_moves.push_back( ( pawn_board & clear_file[e_file_A] ) >> 7 & enemy_pieces );
+			}
+
+			pawn_board = BitOperations::PopLSB( pawn_board );
+		}
+
+		for ( size_t i = 0; i < board_moves.size(); i++ )
+		{
+			if ( board_moves[i] == 0 )
+			{
+				board_moves.erase( board_moves.begin() + i-- );
+			}
+			else
+			{
+				attacks |= board_moves[i];
+			}
+		}
+
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		return attacks;
+	}
+
+	bitboard get_knight_attacks( bool enemy = false )
+	{
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		bitboard attacks{};
+		bitboard knight_board{ get_knight_board() };
+		std::vector<bitboard> board_moves{};
+		bitboard friendly_pieces{ get_all_friendly_pieces() };
+
+
+		while ( knight_board )
+		{
+			board_moves.push_back( ( knight_board & clear_file[e_file_H] ) >> 17 & ~friendly_pieces & clear_file[e_file_H] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_H] & clear_file[e_file_G] ) >> 10 & ~friendly_pieces & clear_file[e_file_H] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_H] ) << 15 & ~friendly_pieces & clear_file[e_file_H] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_H] & clear_file[e_file_G] ) << 6 & ~friendly_pieces & clear_file[e_file_H] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_A] ) >> 15 & ~friendly_pieces & clear_file[e_file_A] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_A] & clear_file[e_file_B] ) >> 6 & ~friendly_pieces & clear_file[e_file_A] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_A] ) << 17 & ~friendly_pieces & clear_file[e_file_A] );
+			board_moves.push_back( ( knight_board & clear_file[e_file_A] & clear_file[e_file_B] ) << 10 & ~friendly_pieces & clear_file[e_file_A] );
+
+			knight_board = BitOperations::PopLSB( knight_board );
+		}
+
+		for ( size_t i = 0; i < board_moves.size(); i++ )
+		{
+			if ( board_moves[i] == 0 )
+			{
+				board_moves.erase( board_moves.begin() + i-- );
+			}
+			else
+			{
+				attacks |= board_moves[i];
+			}
+		}
+
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		return attacks;
+	}
+
+	bitboard get_bishop_attacks( bool enemy = false )
+	{
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		bitboard attacks{};
+		bitboard bishop_board{ get_bishop_board() };
+
+		while ( bishop_board )
+		{
+			attacks |= ( magic.GetBishopAttacks( _bitscanf( bishop_board ), get_all_pieces() ) & ~get_all_friendly_pieces() );
+			bishop_board = BitOperations::PopLSB( bishop_board );
+		}
+
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		return attacks;
+	}
+
+	bitboard get_rook_attacks( bool enemy = false )
+	{
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		bitboard attacks{};
+		bitboard rook_board{ get_rook_board() };
+
+		while ( rook_board )
+		{
+			attacks |= ( magic.GetRookAttacks( _bitscanf( rook_board ), get_all_pieces() ) & ~get_all_friendly_pieces() );
+			rook_board = BitOperations::PopLSB( rook_board );
+		}
+
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		return attacks;
+	}
+
+	bitboard get_queen_attacks( bool enemy = false )
+	{
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		bitboard attacks{};
+		bitboard queen_board{ get_queen_board() };
+
+		while ( queen_board )
+		{
+			attacks |= ( magic.GetBishopAttacks( _bitscanf( queen_board ), get_all_pieces() ) & ~get_all_friendly_pieces() );
+			attacks |= ( magic.GetRookAttacks( _bitscanf( queen_board ), get_all_pieces() ) & ~get_all_friendly_pieces() );
+			queen_board = BitOperations::PopLSB( queen_board );
+		}
+
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		return attacks;
+	}
+
+	bitboard get_king_attacks( bool enemy = false )
+	{
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		bitboard attacks{};
+		std::vector<bitboard> board_moves{};
+		bitboard king_board{ get_king_board() };
+		bitboard friendly_pieces{ get_all_friendly_pieces() };
+		bitboard enemy_pieces{ get_all_enemy_pieces() };
+
+		while ( king_board )
+		{
+			if ( to_move == e_white )
+			{
+				board_moves.push_back( king_board >> 8 & ~friendly_pieces );
+				board_moves.push_back( king_board << 8 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_H] ) >> 1 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_A] ) << 1 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_H] ) >> 9 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_A] ) >> 7 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_H] ) << 9 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_A] ) << 7 & ~friendly_pieces );
+			}
+			else
+			{
+				board_moves.push_back( king_board << 8 & ~friendly_pieces );
+				board_moves.push_back( king_board >> 8 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_A] ) << 1 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_H] ) >> 1 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_A] ) << 9 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_H] ) << 7 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_A] ) >> 9 & ~friendly_pieces );
+				board_moves.push_back( ( king_board & clear_file[e_file_H] ) >> 7 & ~friendly_pieces );
+			}
+
+			king_board = BitOperations::PopLSB( king_board );
+		}
+
+		for ( size_t i = 0; i < board_moves.size(); i++ )
+		{
+			if ( board_moves[i] == 0 )
+			{
+				board_moves.erase( board_moves.begin() + i-- );
+			}
+			else
+			{
+				attacks |= board_moves[i];
+			}
+		}
+
+		if ( enemy == true )
+		{
+			to_move = to_move == e_white ? e_black : e_white;
+		}
+
+		return attacks;
+	}
+
+	bitboard get_attacks( bool enemy = false )
+	{
+		bitboard attacks{ get_pawn_attacks() };
+
+		return ( ( ( ( ( ( ( attacks |= get_knight_attacks( enemy ) ) |= get_bishop_attacks( enemy ) ) )
+			|= get_rook_attacks( enemy ) ) ) |= get_queen_attacks( enemy ) ) |= get_king_attacks( enemy )
+		);
 	}
 
 	std::vector<move> get_white_king_moves( bitboard pos )
@@ -339,6 +581,37 @@ public:
 			m.from = _bitscanf( pos );
 			m.to = _bitscanf( board );
 			m.type = e_king;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 		}
 
@@ -374,6 +647,37 @@ public:
 			m.from = _bitscanf( pos );
 			m.to = _bitscanf( board );
 			m.type = e_king;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 		}
 
@@ -406,6 +710,37 @@ public:
 			m.from = _bitscanf( pos );
 			m.to = _bitscanf( board );
 			m.type = e_pawn;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 		}
 
@@ -438,6 +773,37 @@ public:
 			m.from = _bitscanf( pos );
 			m.to = _bitscanf( board );
 			m.type = e_pawn;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 		}
 
@@ -473,6 +839,37 @@ public:
 			m.from = _bitscanf( pos );
 			m.to = _bitscanf( board );
 			m.type = e_knight;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 		}
 
@@ -489,54 +886,6 @@ public:
 		return to_move == e_white ? get_white_pawn_moves( pos ) : get_black_pawn_moves( pos );
 	}
 
-	bitboard _rays[8][64];
-
-	enum cardinal_directions
-	{
-		north,
-		south,
-		east,
-		west,
-		north_east,
-		north_west,
-		south_east,
-		south_west
-	};
-
-	inline bitboard _eastN( bitboard board, int n ) 
-	{
-		bitboard new_board{ board };
-
-		for ( int i = 0; i < n; i++ ) 
-		{
-			new_board = ( ( new_board << 1 ) & ( ~e_file_A ) );
-		}
-
-		return new_board;
-	}
-
-	inline bitboard _westN( bitboard board, int n ) 
-	{
-		bitboard new_board{ board };
-
-		for ( int i = 0; i < n; i++ ) 
-		{
-			new_board = ( ( new_board >> 1 ) & ( ~e_file_H ) );
-		}
-
-		return new_board;
-	}
-
-	inline int _row( int square ) 
-	{
-		return square / 8;
-	}
-
-	inline int _col( int square ) 
-	{
-		return square % 8;
-	}
-
 	uint8_t _bitscanf( uint64_t bits )
 	{
 		return BitOperations::BitScan( bits );
@@ -546,119 +895,7 @@ public:
 	{
 		magic.GenerateForRook();
 		magic.GenerateForBishop();
-	}
-
-	void init() 
-	{
-		for ( int square = 0; square < 64; square++ ) 
-		{
-			// North
-			_rays[north][square] = 0x0101010101010100ULL << square;
-
-			// South
-			_rays[south][square] = 0x0080808080808080ULL >> ( 63 - square );
-
-			// East
-			_rays[east][square] = 2 * ( ( one_board << ( square | 7 ) ) - ( one_board << square ) );
-
-			// West
-			_rays[west][square] = ( one_board << square ) - ( one_board << ( square & 56 ) );
-
-			// North West
-			_rays[north_west][square] = _westN( 0x102040810204000ULL, 7 - _col( square ) ) << ( _row( square ) * 8 );
-
-			// North East
-			_rays[north_east][square] = _eastN( 0x8040201008040200ULL, _col( square ) ) << ( _row( square ) * 8 );
-
-			// South West
-			_rays[south_west][square] = _westN( 0x40201008040201ULL, 7 - _col( square ) ) >> ( ( 7 - _row( square ) ) * 8 );
-
-			// South East
-			_rays[south_east][square] = _eastN( 0x2040810204080ULL, _col( square ) ) >> ( ( 7 - _row( square ) ) * 8 );
-		}
-	}
-
-	bitboard get_ray( cardinal_directions ray_direction, int square ) 
-	{
-		return _rays[ray_direction][square];
-	}
-
-	bitboard get_bishop_attacks( int square, bitboard blockers ) 
-	{
-		bitboard attacks{ null_board };
-
-		// North West
-		attacks |= get_ray( north_west, square );
-
-		if ( get_ray( north_west, square ) & blockers ) 
-		{
-			attacks &= ~( get_ray( north_west, ( _bitscanf( get_ray( north_west, square ) & blockers ) ) ) );
-		}
-
-		// North East
-		attacks |= get_ray( north_east, square );
-
-		if ( get_ray( north_east, square ) & blockers ) 
-		{
-			attacks &= ~( get_ray( north_east, ( _bitscanf( get_ray( north_east, square ) & blockers ) ) ) );
-		}
-
-		// South East
-		attacks |= get_ray( south_east, square );
-
-		if ( get_ray( south_east, square ) & blockers ) 
-		{
-			attacks &= ~( get_ray( south_east, ( _bitscanf( get_ray( south_east, square ) & blockers ) ) ) );
-		}
-
-		// South West
-		attacks |= get_ray( south_west, square );
-
-		if ( get_ray( south_west, square ) & blockers ) 
-		{
-			attacks &= ~( get_ray( south_west, ( _bitscanf( get_ray( south_west, square ) & blockers ) ) ) );
-		}
-
-		return attacks;
-	}
-
-	bitboard get_rook_attacks( int square, bitboard blockers ) 
-	{
-		bitboard attacks{ null_board };
-
-		// North
-		attacks |= get_ray( north, square );
-
-		if ( get_ray( north, square ) & blockers ) 
-		{
-			attacks &= ~( get_ray( north, _bitscanf( get_ray( north, square ) & blockers ) ) );
-		}
-
-		// South
-		attacks |= get_ray( south, square );
-
-		if ( get_ray( south, square ) & blockers )
-		{
-			attacks &= ~( get_ray( south, _bitscanf( get_ray( south, square ) & blockers ) ) );
-		}
-
-		// East
-		attacks |= get_ray( east, square );
-
-		if ( get_ray( east, square ) & blockers )
-		{
-			attacks &= ~( get_ray( east, _bitscanf( get_ray( east, square ) & blockers ) ) );
-		}
-
-		// West
-		attacks |= get_ray( west, square );
-
-		if ( get_ray( west, square ) & blockers )
-		{
-			attacks &= ~( get_ray( west, _bitscanf( get_ray( west, square ) & blockers ) ) );
-		}
-
-		return attacks;
+		magic_initialized = true;
 	}
 
 	std::vector<move> get_rook_moves_magic( uint8_t index, bitboard occ )
@@ -672,6 +909,37 @@ public:
 			m.from = index;
 			m.to = _bitscanf( result );
 			m.type = e_rook;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 			result = BitOperations::PopLSB( result );
 		}
@@ -690,6 +958,37 @@ public:
 			m.from = index;
 			m.to = _bitscanf( result );
 			m.type = e_bishop;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 			result = BitOperations::PopLSB( result );
 		}
@@ -708,6 +1007,37 @@ public:
 			m.from = index;
 			m.to = _bitscanf( result );
 			m.type = e_queen;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.captured_type = e_king;
+				}
+			}
+
 			moves.push_back( m );
 			result = BitOperations::PopLSB( result );
 		}
@@ -729,17 +1059,8 @@ public:
 
 	bool is_king_in_check( bool enemy = false )
 	{
-		auto moves{ get_all_moves( !enemy ) };
-
-		for ( auto m : moves )
-		{
-			if ( m.to == _bitscanf( enemy ? get_enemy_king_board() : get_king_board() ) )
-			{
-				return true;
-			}
-		}
-
-		return false;
+		if ( get_attacks( !enemy ) & get_king_board() ) ++checks;
+		return get_attacks( !enemy ) & get_king_board();
 	}
 
 	bitboard get_pinned_board( bool enemy = false )
@@ -764,7 +1085,11 @@ public:
 
 	std::vector<move> get_all_moves( bool enemy = false )
 	{
-		magic_init();
+		if ( magic_initialized == false )
+		{
+			magic_init();
+		}
+
 		if ( enemy ) { to_move = to_move == e_white ? e_black : e_white; };
 
 		std::vector<move> moves{};
@@ -821,53 +1146,79 @@ public:
 		return moves;
 	}
 
+	std::vector<move> get_all_legal_moves()
+	{
+		auto moves{ get_all_moves() };
+
+		for ( int i = 0; i < moves.size(); i++ )
+		{
+			make_move( moves[i] );
+			bool check{ is_king_in_check( true ) };
+			unmake_move();
+
+			if ( check == true )
+			{
+				moves.erase( moves.begin() + i-- );
+			}
+		}
+
+		return moves;
+	}
+
 	void make_move( move _move )
 	{
-		bitboard* board{};
+		std::vector<bitboard> board_copies{};
+
+		for ( int i = 0; i < 12; i++ )
+		{
+			board_copies.push_back( boards[i] );
+		}
+
+		cache.push_back( std::tuple<std::vector<bitboard>, move>( board_copies, _move ) );
 
 		switch ( _move.type )
 		{
 			case e_pawn:
-				board = to_move == e_white ? &boards[e_white_pawn] : &boards[e_black_pawn];
-				cache.push_back( std::tuple<bitboard, move>( *board, _move  ) );
-				*board &= ~_move.from;
-				*board |= _move.to;
-				break;
+			{
+				bitboard& pawn_board{ get_pawn_board() };
+				( pawn_board &= ~_move.from ) |= _move.to;
+				get_enemy_pawn_board() &= ~pawn_board;
+			} break;
 
 			case e_knight:
-				board = to_move == e_white ? &boards[e_white_knight] : &boards[e_black_knight];
-				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
-				*board &= ~_move.from;
-				*board |= _move.to;
-				break;
+			{
+				bitboard& knight_board{ get_knight_board() };
+				( knight_board &= ~_move.from ) |= _move.to;
+				get_enemy_knight_board() &= ~knight_board;
+			} break;
 				
 			case e_bishop:
-				board = to_move == e_white ? &boards[e_white_bishop] : &boards[e_black_bishop];
-				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
-				*board &= ~_move.from;
-				*board |= _move.to;
-				break;
+			{
+				bitboard& bishop_board{ get_bishop_board() };
+				( bishop_board &= ~_move.from ) |= _move.to;
+				get_enemy_bishop_board() &= ~bishop_board;
+			} break;
 
 			case e_rook:
-				board = to_move == e_white ? &boards[e_white_rook] : &boards[e_black_rook];
-				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
-				*board &= ~_move.from;
-				*board |= _move.to;
-				break;
+			{
+				bitboard& rook_board{ get_rook_board() };
+				( rook_board &= ~_move.from ) |= _move.to;
+				get_enemy_rook_board() &= ~rook_board;
+			} break;
 
 			case e_queen:
-				board = to_move == e_white ? &boards[e_white_queen] : &boards[e_black_queen];
-				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
-				*board &= ~_move.from;
-				*board |= _move.to;
-				break;
+			{
+				bitboard& queen_board{ get_queen_board() };
+				( queen_board &= ~_move.from ) |= _move.to;
+				get_enemy_queen_board() &= ~queen_board;
+			} break;
 
 			case e_king:
-				board = to_move == e_white ? &boards[e_white_king] : &boards[e_black_king];
-				cache.push_back( std::tuple<bitboard, move>( *board, _move ) );
-				*board &= ~_move.from;
-				*board |= _move.to;
-				break;
+			{
+				bitboard& king_board{ get_king_board() };
+				( king_board &= ~_move.from ) |= _move.to;
+				get_enemy_king_board() &= ~king_board;
+			} break;
 		}
 
 		to_move = to_move == e_white ? e_black : e_white;
@@ -875,43 +1226,65 @@ public:
 
 	void unmake_move()
 	{
-		bitboard* board{};
-
-		switch ( std::get<1>( cache.back() ).type )
+		for ( int i = 0; i < 12; i++ )
 		{
-		case e_pawn:
-			board = to_move == e_white ? &boards[e_white_pawn] : &boards[e_black_pawn];
-			*board = std::get<0>( cache.back() );
-			break;
-
-		case e_knight:
-			board = to_move == e_white ? &boards[e_white_knight] : &boards[e_black_knight];
-			*board = std::get<0>( cache.back() );
-			break;
-
-		case e_bishop:
-			board = to_move == e_white ? &boards[e_white_bishop] : &boards[e_black_bishop];
-			*board = std::get<0>( cache.back() );
-			break;
-
-		case e_rook:
-			board = to_move == e_white ? &boards[e_white_rook] : &boards[e_black_rook];
-			*board = std::get<0>( cache.back() );
-			break;
-
-		case e_queen:
-			board = to_move == e_white ? &boards[e_white_queen] : &boards[e_black_queen];
-			*board = std::get<0>( cache.back() );
-			break;
-
-		case e_king:
-			board = to_move == e_white ? &boards[e_white_king] : &boards[e_black_king];
-			*board = std::get<0>( cache.back() );
-			break;
+			boards[i] = std::get<0>( cache.back() )[i];
 		}
 
 		to_move = to_move == e_white ? e_black : e_white;
 		cache.pop_back();
+	}
+
+	int32_t search( uint16_t depth, int alpha, int beta )
+	{
+		if ( depth == 0 )
+		{
+			return alpha;
+		}
+
+		auto moves{ get_all_moves() };
+
+		for ( auto m : moves ) 
+		{
+			make_move( m );
+
+			int32_t score = -search( depth - 1, -beta, -alpha );
+
+			if ( score >= beta )
+			{
+				return beta;
+			}
+
+			if ( score > alpha )
+			{
+				alpha = score;
+				alpha_move = m;
+			}
+
+			unmake_move();
+		}
+
+		return alpha;
+	}
+	int checks{};
+	int64_t perft( uint8_t depth )
+	{
+		if ( depth == 0 )
+		{
+			return 1;
+		}
+
+		int64_t count{ 0 };
+		auto moves{ get_all_legal_moves() };
+
+		for( move m : moves )
+		{
+			make_move( m );
+			count += perft( depth - 1 );
+			unmake_move();
+		}
+
+		return count;
 	}
 };
 
@@ -945,13 +1318,15 @@ std::string type_to_string( piece_type type )
 int main()
 {
 	position p{};
-	auto moves{ p.get_all_moves() }; //p.get_pawn_moves( p.get_pawn_board() ) };
+	std::cout << p.perft( 3 ) << "\nchecks: " << p.checks;
 
-	for ( auto b : moves )
-	{
-		std::cout << type_to_string( b.type ) << ": " << square_id[b.from] << "->" << square_id[b.to] << std::endl;
+	//auto moves{ p.get_all_moves() }; //p.get_pawn_moves( p.get_pawn_board() ) };
+
+	//for ( auto b : moves )
+	//{
+		//std::cout << type_to_string( b.type ) << ": " << square_id[b.from] << "->" << square_id[b.to] << std::endl;
 		//print_board( squares[b.from] );
-	}
+	//}
 
 	getchar();
 }
