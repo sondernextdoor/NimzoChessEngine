@@ -77,18 +77,6 @@ enum
 	e_file_A
 };
 
-enum
-{
-	A1, B1, C1, D1, E1, F1, G1, H1,
-	A2, B2, C2, D2, E2, F2, G2, H2,
-	A3, B3, C3, D3, E3, F3, G3, H3,
-	A4, B4, C4, D4, E4, F4, G4, H4,
-	A5, B5, C5, D5, E5, F5, G5, H5,
-	A6, B6, C6, D6, E6, F6, G6, H6,
-	A7, B7, C7, D7, E7, F7, G7, H7,
-	A8, B8, C8, D8, E8, F8, G8, H8
-};
-
 std::string square_id[]
 {
 	"A1", "B1", "C1", "D1", "E1", "F1", "G1", "H1",
@@ -108,26 +96,6 @@ struct move
 	piece_type type{};
 	bool capture{};
 	piece_type captured_type{};
-};
-
-bitboard h_file_board
-{
-	0b1000000010000000100000001000000010000000100000001000000010000000
-};
-
-bitboard a_file_board
-{
-	0b0000000100000001000000010000000100000001000000010000000100000001
-};
-
-bitboard white_board
-{
-	0b0000000000000000000000000000000000000000000000001111111111111111
-};
-
-bitboard black_board
-{
-	0b1111111111111111000000000000000000000000000000000000000000000000
 };
 
 uint64_t mask_rank[8]
@@ -178,7 +146,7 @@ uint64_t clear_file[8]
 	0b1111111011111110111111101111111011111110111111101111111011111110
 };
 
-void print_board( bitboard board = black_board | white_board )
+void print_board( bitboard board )
 {
 	for ( int64_t i = 63; i >= 0; i-- )
 	{
@@ -284,24 +252,26 @@ public:
 
 	bitboard get_all_friendly_pieces() const
 	{
-		return ( boards[ ( to_move == e_white ? e_white_pawn : e_black_pawn ) ] 
-			| boards[ ( to_move == e_white ? e_white_knight : e_black_knight ) ] 
-			| boards[ ( to_move == e_white ? e_white_bishop : e_black_bishop ) ] 
-			| boards[ ( to_move == e_white ? e_white_rook : e_black_rook ) ] 
-			| boards[ ( to_move == e_white ? e_white_queen : e_black_queen ) ] 
-			| boards[ ( to_move == e_white ? e_white_king : e_black_king ) ] 
-		);
+		bitboard pieces{ boards[( to_move == e_white ? e_white_pawn : e_black_pawn )] };
+		pieces |= boards[( to_move == e_white ? e_white_knight : e_black_knight )];
+		pieces |= boards[( to_move == e_white ? e_white_bishop : e_black_bishop )];
+		pieces |= boards[( to_move == e_white ? e_white_rook : e_black_rook )];
+		pieces |= boards[( to_move == e_white ? e_white_queen : e_black_queen )];
+		pieces |= boards[( to_move == e_white ? e_white_king : e_black_king )];
+	
+		return pieces;
 	}
 
 	bitboard get_all_enemy_pieces() const
 	{
-		return ( boards[ ( to_move == e_black ? e_white_pawn : e_black_pawn ) ] 
-			| boards[ ( to_move == e_black ? e_white_knight : e_black_knight ) ] 
-			| boards[ ( to_move == e_black ? e_white_bishop : e_black_bishop ) ] 
-			| boards[ ( to_move == e_black ? e_white_rook : e_black_rook ) ] 
-			| boards[ ( to_move == e_black ? e_white_queen : e_black_queen ) ] 
-			| boards[ ( to_move == e_black ? e_white_king : e_black_king ) ] 
-		);
+		bitboard pieces{ boards[( to_move == e_white ? e_black_pawn : e_white_pawn )] };
+		pieces |= boards[( to_move == e_white ? e_black_knight : e_white_knight )];
+		pieces |= boards[( to_move == e_white ? e_black_bishop : e_white_bishop )];
+		pieces |= boards[( to_move == e_white ? e_black_rook : e_white_rook )];
+		pieces |= boards[( to_move == e_white ? e_black_queen : e_white_queen )];
+		pieces |= boards[( to_move == e_white ? e_black_king : e_white_king )];
+
+		return pieces;
 	}
 
 	bitboard get_all_pieces() const
@@ -331,14 +301,24 @@ public:
 			if ( to_move == e_white )
 			{
 				board_moves.push_back( pos << 8 & ~friendly_pieces & ~enemy_pieces );
-				board_moves.push_back( board_moves.back() << 8 & ~friendly_pieces & ~enemy_pieces );
+
+				if ( pos & mask_rank[e_rank_2] )
+				{
+					board_moves.push_back( board_moves.back() << 8 & ~friendly_pieces & ~enemy_pieces );
+				}
+
 				board_moves.push_back( ( pos & clear_file[e_file_H] ) << 9 & enemy_pieces );
 				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 7 & enemy_pieces );
 			}
 			else
 			{
 				board_moves.push_back( pos >> 8 & ~friendly_pieces & ~enemy_pieces );
-				board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+
+				if ( pos & mask_rank[e_rank_7] )
+				{
+					board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+				}
+
 				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & enemy_pieces );
 				board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & enemy_pieces );
 			}
@@ -579,6 +559,15 @@ public:
 		return attacks;
 	}
 
+	bitboard get_sliding_attacks( bitboard pos = 0, bool enemy = false )
+	{
+		bitboard attacks{ get_bishop_attacks( pos, get_all_pieces(), enemy ) };
+		attacks |= get_rook_attacks( pos, get_all_pieces(), enemy );
+		attacks |= get_queen_attacks( pos, get_all_pieces(), enemy );
+
+		return attacks;
+	}
+
 	std::vector<move> get_white_king_moves( bitboard pos )
 	{
 		std::vector<bitboard> board_moves{};
@@ -718,8 +707,13 @@ public:
 		bitboard friendly_pieces{ get_all_friendly_pieces() };
 		bitboard enemy_pieces{ get_all_enemy_pieces() };
 
-		board_moves.push_back( pos << 8 & ~friendly_pieces & ~enemy_pieces );
-		board_moves.push_back( board_moves.back() << 8 & ~friendly_pieces & ~enemy_pieces );
+		board_moves.push_back( ( pos << 8 & ~friendly_pieces ) & ~enemy_pieces );
+
+		if ( pos & mask_rank[e_rank_2] )
+		{
+			board_moves.push_back( ( board_moves.back() << 8 & ~friendly_pieces ) & ~enemy_pieces );
+		}
+
 		board_moves.push_back( ( pos & clear_file[e_file_H] ) << 9 & enemy_pieces );
 		board_moves.push_back( ( pos & clear_file[e_file_A] ) << 7 & enemy_pieces );
 
@@ -736,10 +730,16 @@ public:
 			move m{};
 			m.from |= ( 1ull << _bitscanf( pos ) );
 			m.to |= ( 1ull << _bitscanf( board ) );
+
 			m.type = e_pawn;
 
 			if ( m.to & enemy_pieces )
 			{
+				if ( m.from << 8 == m.to || m.from << 16 == m.to )
+				{
+					continue;
+				}
+
 				m.capture = true;
 
 				if ( m.to & get_enemy_pawn_board() )
@@ -782,7 +782,12 @@ public:
 		bitboard enemy_pieces{ get_all_enemy_pieces() };
 
 		board_moves.push_back( pos >> 8 & ~friendly_pieces & ~enemy_pieces );
-		board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+
+		if ( pos & mask_rank[e_rank_7] )
+		{
+			board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+		}
+
 		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & enemy_pieces );
 		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & enemy_pieces );
 
@@ -803,10 +808,15 @@ public:
 
 			if ( m.to & get_all_enemy_pieces() )
 			{
-				//std::cout << "piece: " << m.type << std::endl;
-				//print_board( m.from );
-				//print_board( m.to );
-				//print_board( get_all_enemy_pieces() );
+				if ( m.from >> 8 == m.to || m.from >> 16 == m.to )
+				{
+					continue;
+				}
+
+				std::cout << "piece: " << m.type << std::endl;
+				print_board( m.from );
+				print_board( m.to );
+				print_board( get_all_enemy_pieces() );
 				m.capture = true;
 
 				if ( m.to & get_enemy_pawn_board() )
@@ -1099,30 +1109,21 @@ public:
 		return get_attacks( true ) & pos;
 	}
 
-	bitboard get_pinned_board( bitboard pos, bool enemy = false )
+	bitboard get_pinned_board( bool enemy = false )
 	{
 		if ( enemy == true )
 		{
 			to_move = to_move == e_white ? e_black : e_white;
 		}
 
-		bitboard occ{ get_all_pieces() };
-		bitboard sliders{ get_rook_board() & get_queen_board() };
-		bitboard pinned{}; 
-		bitboard possiblePinned{};
-		bitboard pinners{};
+		bitboard enemy_attacks{ get_sliding_attacks( 0, true ) };
+		bitboard king_rays{ get_sliding_attacks( get_king_board() ) };
+		bitboard pinned{ enemy_attacks & king_rays };
+		pinned &= get_all_pieces();
 
-		if ( sliders ) 
+		if ( enemy == true )
 		{
-			possiblePinned = get_rook_attacks( pos, occ ) & get_all_friendly_pieces();
-			pinners = get_rook_attacks( pos, occ ^ possiblePinned ) & sliders;
-
-			while ( pinners )
-			{
-				bitboard pinner{ _bitscanf( pinners ) };
-				pinned |= get_rook_attacks( pinner, occ ) & possiblePinned;
-				pinners &= ~( 1ull << pinner );
-			}
+			to_move = to_move == e_white ? e_black : e_white;
 		}
 
 		return pinned;
@@ -1147,42 +1148,48 @@ public:
 
 		while ( pawn_board )
 		{
-			auto v{ get_pawn_moves( pawn_board ) };
+			bitboard board{ ( 1ull << _bitscanf( pawn_board ) ) };
+			auto v{ get_pawn_moves( board ) };
 			moves.insert( moves.end(), v.begin(), v.end() );
 			pawn_board = BitOperations::PopLSB( pawn_board );
 		}
 
 		while ( knight_board )
 		{
-			auto v{ get_knight_moves( knight_board ) };
+			bitboard board{ ( 1ull << _bitscanf( knight_board ) ) };
+			auto v{ get_knight_moves( board ) };
 			moves.insert( moves.end(), v.begin(), v.end() );
 			knight_board = BitOperations::PopLSB( knight_board );
 		}
 
 		while ( bishop_board )
 		{
-			auto v{ get_bishop_moves_magic( _bitscanf( bishop_board ), get_all_pieces() ) };
+			bitboard board{ ( 1ull << _bitscanf( bishop_board ) ) };
+			auto v{ get_bishop_moves_magic( _bitscanf( board ), get_all_pieces() ) };
 			moves.insert( moves.end(), v.begin(), v.end() );
 			bishop_board = BitOperations::PopLSB( bishop_board );
 		}
 
 		while ( rook_board )
 		{
-			auto v{ get_rook_moves_magic( _bitscanf( rook_board ), get_all_pieces() ) };
+			bitboard board{ ( 1ull << _bitscanf( rook_board ) ) };
+			auto v{ get_rook_moves_magic( _bitscanf( board ), get_all_pieces() ) };
 			moves.insert( moves.end(), v.begin(), v.end() );
 			rook_board = BitOperations::PopLSB( rook_board );
 		}
 
 		while ( queen_board )
 		{
-			auto v{ get_queen_moves_magic( _bitscanf( queen_board ), get_all_pieces() ) };
+			bitboard board{ ( 1ull << _bitscanf( queen_board ) ) };
+			auto v{ get_queen_moves_magic( _bitscanf( board ), get_all_pieces() ) };
 			moves.insert( moves.end(), v.begin(), v.end() );
 			queen_board = BitOperations::PopLSB( queen_board );
 		}
 
 		while ( king_board )
 		{
-			auto v{ get_king_moves( king_board ) };
+			bitboard board{ ( 1ull << _bitscanf( king_board ) ) };
+			auto v{ get_king_moves( board ) };
 			moves.insert( moves.end(), v.begin(), v.end() );
 			king_board = BitOperations::PopLSB( king_board );
 		}
@@ -1191,21 +1198,23 @@ public:
 		return moves;
 	}
 
-	void pinned_test()
-	{
-
-	}
-
 	std::vector<move> get_all_legal_moves()
 	{
 		auto moves{ get_all_moves() };
 
 		for ( int i = 0; i < moves.size(); i++ )
 		{
-			if ( get_pinned_board( get_king_board() ) & moves[i].from )
+			if ( get_pinned_board() & moves[i].from )
 			{
-				moves.erase( moves.begin() + i-- );
-				continue;
+				make_move( moves[i] );
+				bitboard pinned{ get_pinned_board() };
+				unmake_move();
+
+				if ( ( pinned & moves[i].to ) == false )
+				{
+					moves.erase( moves.begin() + i-- );
+					continue;
+				}
 			}
 
 			make_move( moves[i] );
@@ -1239,7 +1248,6 @@ public:
 				bitboard& pawn_board{ get_pawn_board() };
 				pawn_board &= ~_move.from;
 				pawn_board |= _move.to;
-				get_enemy_pawn_board() &= ~pawn_board;
 			} break;
 
 			case e_knight:
@@ -1247,7 +1255,6 @@ public:
 				bitboard& knight_board{ get_knight_board() };
 				knight_board &= ~_move.from;
 				knight_board |= _move.to;
-				get_enemy_knight_board() &= ~knight_board;
 			} break;
 				
 			case e_bishop:
@@ -1255,7 +1262,6 @@ public:
 				bitboard& bishop_board{ get_bishop_board() };
 				bishop_board &= ~_move.from;
 				bishop_board |= _move.to;
-				get_enemy_bishop_board() &= ~bishop_board;
 			} break;
 
 			case e_rook:
@@ -1263,7 +1269,6 @@ public:
 				bitboard& rook_board{ get_rook_board() };
 				rook_board &= ~_move.from;
 				rook_board |= _move.to;
-				get_enemy_rook_board() &= ~rook_board;
 			} break;
 
 			case e_queen:
@@ -1271,7 +1276,6 @@ public:
 				bitboard& queen_board{ get_queen_board() };
 				queen_board &= ~_move.from;
 				queen_board |= _move.to;
-				get_enemy_queen_board() &= ~queen_board;
 			} break;
 
 			case e_king:
@@ -1279,8 +1283,43 @@ public:
 				bitboard& king_board{ get_king_board() };
 				king_board &= ~_move.from;
 				king_board |= _move.to;
-				get_enemy_king_board() &= ~king_board;
 			} break;
+		}
+
+		if ( _move.capture == true )
+		{
+			switch ( _move.captured_type )
+			{
+				case e_pawn:
+				{
+					get_enemy_pawn_board() &= ~_move.to;
+				} break;
+
+				case e_knight:
+				{
+					get_enemy_knight_board() &= ~_move.to;
+				} break;
+
+				case e_bishop:
+				{
+					get_enemy_bishop_board() &= ~_move.to;
+				} break;
+
+				case e_rook:
+				{
+					get_enemy_rook_board() &= ~_move.to;
+				} break;
+
+				case e_queen:
+				{
+					get_enemy_queen_board() &= ~_move.to;
+				} break;
+
+				case e_king:
+				{
+					get_enemy_king_board() &= ~_move.to;
+				} break;
+			}
 		}
 
 		to_move = to_move == e_white ? e_black : e_white;
