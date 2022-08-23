@@ -515,57 +515,29 @@ public:
 			pos = get_king_board();
 		}
 
-		bitboard attacks{};
-		std::vector<bitboard> board_moves{};
 		bitboard friendly_pieces{ get_all_friendly_pieces() };
-		bitboard enemy_pieces{ get_all_enemy_pieces() };
 
-		while ( pos )
-		{
-			if ( to_move == e_white )
-			{
-				board_moves.push_back( pos >> 8 & ~friendly_pieces );
-				board_moves.push_back( pos << 8 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 1 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 1 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) << 9 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 7 & ~friendly_pieces );
-			}
-			else
-			{
-				board_moves.push_back( pos << 8 & ~friendly_pieces );
-				board_moves.push_back( pos >> 8 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 1 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 1 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 9 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) << 7 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 9 & ~friendly_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 7 & ~friendly_pieces );
-			}
+		bitboard king_clip_file_h = pos & clear_file[e_file_H];
+		bitboard king_clip_file_a = pos & clear_file[e_file_A];
 
-			pos = BitOperations::PopLSB( pos );
-		}
+		bitboard spot_1 = king_clip_file_h << 7;
+		bitboard spot_2 = pos << 8;
+		bitboard spot_3 = king_clip_file_h << 9;
+		bitboard spot_4 = king_clip_file_h << 1;
 
-		for ( size_t i = 0; i < board_moves.size(); i++ )
-		{
-			if ( board_moves[i] == 0 )
-			{
-				board_moves.erase( board_moves.begin() + i-- );
-			}
-			else
-			{
-				attacks |= board_moves[i];
-			}
-		}
+		bitboard spot_5 = king_clip_file_a >> 7;
+		bitboard spot_6 = pos >> 8;
+		bitboard spot_7 = king_clip_file_a >> 9;
+		bitboard spot_8 = king_clip_file_a >> 1;
+
+		bitboard attacks{ spot_1 | spot_2 | spot_3 | spot_4 | spot_5 | spot_6 | spot_7 | spot_8 };
 
 		if ( enemy == true )
 		{
 			to_move = to_move == e_white ? e_black : e_white;
 		}
 
-		return attacks;
+		return attacks &= ~friendly_pieces;
 	}
 
 	bitboard get_attacks( bool enemy = false )
@@ -589,34 +561,33 @@ public:
 		return attacks;
 	}
 
-	std::vector<move> get_white_king_moves( bitboard pos )
+	std::vector<move> get_king_moves( bitboard pos )
 	{
-		std::vector<bitboard> board_moves{};
 		std::vector<move> moves{};
 		bitboard friendly_pieces{ get_all_friendly_pieces() };
 
-		board_moves.push_back( pos >> 8 & ~friendly_pieces );
-		board_moves.push_back( pos << 8 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 1 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) << 1 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) << 9 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) << 7 & ~friendly_pieces );
+		bitboard king_clip_file_h = pos & clear_file[e_file_H];
+		bitboard king_clip_file_a = pos & clear_file[e_file_A];
 
-		for ( size_t i = 0; i < board_moves.size(); i++ )
-		{
-			if ( board_moves[i] == 0 )
-			{
-				board_moves.erase( board_moves.begin() + i-- );
-			}
-		}
+		bitboard spot_1 = king_clip_file_h << 7;
+		bitboard spot_2 = pos << 8;
+		bitboard spot_3 = king_clip_file_h << 9;
+		bitboard spot_4 = king_clip_file_h << 1;
 
-		for ( bitboard board : board_moves )
+		bitboard spot_5 = king_clip_file_a >> 7;
+		bitboard spot_6 = pos >> 8;
+		bitboard spot_7 = king_clip_file_a >> 9;
+		bitboard spot_8 = king_clip_file_a >> 1;
+
+		bitboard king_moves{ spot_1 | spot_2 | spot_3 | spot_4 | spot_5 | spot_6 | spot_7 | spot_8 };
+
+		king_moves &= ~friendly_pieces;
+
+		while( king_moves )
 		{
 			move m{};
 			m.from |= ( 1ull << _bitscanf( pos ) );
-			m.to |= ( 1ull << _bitscanf( board ) );
+			m.to |= ( 1ull << _bitscanf( king_moves ) );
 			m.type = e_king;
 
 			if ( m.to & get_all_enemy_pieces() )
@@ -650,72 +621,7 @@ public:
 			}
 
 			moves.push_back( m );
-		}
-
-		return moves;
-	}
-
-	std::vector<move> get_black_king_moves( bitboard pos )
-	{
-		std::vector<bitboard> board_moves{};
-		std::vector<move> moves{};
-		bitboard friendly_pieces{ get_all_friendly_pieces() };
-
-		board_moves.push_back( pos << 8 & ~friendly_pieces );
-		board_moves.push_back( pos >> 8 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) << 1 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 1 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) << 9 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) << 7 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 9 & ~friendly_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 7 & ~friendly_pieces );
-
-		for ( size_t i = 0; i < board_moves.size(); i++ )
-		{
-			if ( board_moves[i] == 0 )
-			{
-				board_moves.erase( board_moves.begin() + i-- );
-			}
-		}
-
-		for ( bitboard board : board_moves )
-		{
-			move m{};
-			m.from |= ( 1ull << _bitscanf( pos ) );
-			m.to |= ( 1ull << _bitscanf( board ) );
-			m.type = e_king;
-
-			if ( m.to & get_all_enemy_pieces() )
-			{
-				m.capture = true;
-
-				if ( m.to & get_enemy_pawn_board() )
-				{
-					m.captured_type = e_pawn;
-				}
-				else if ( m.to & get_enemy_knight_board() )
-				{
-					m.captured_type = e_knight;
-				}
-				else if ( m.to & get_enemy_bishop_board() )
-				{
-					m.captured_type = e_bishop;
-				}
-				else if ( m.to & get_enemy_rook_board() )
-				{
-					m.captured_type = e_rook;
-				}
-				else if ( m.to & get_enemy_queen_board() )
-				{
-					m.captured_type = e_queen;
-				}
-				else if ( m.to & get_enemy_king_board() )
-				{
-					m.capture = false;
-				}
-			}
-
-			moves.push_back( m );
+			king_moves = BitOperations::PopLSB( king_moves );
 		}
 
 		return moves;
@@ -938,11 +844,6 @@ public:
 		}
 		
 		return moves;
-	}
-
-	std::vector<move> get_king_moves( bitboard pos )
-	{
-		return to_move == e_white ? get_white_king_moves( pos ) : get_black_king_moves( pos );
 	}
 
 	std::vector<move> get_pawn_moves( bitboard pos )
@@ -1252,7 +1153,6 @@ public:
 				}
 			}
 
-			bool b{};
 			std::vector<move> white_moves{};
 
 			make_move( moves[i] );
@@ -1260,13 +1160,9 @@ public:
 			bool enemy_check{ is_king_in_check() };
 			unmake_move();
 
-			if ( check == true )
-			{
-				moves.erase( moves.begin() + i-- );
-			}
-
 			if ( enemy_check && to_move == e_black)
 			{
+				const auto& m{ moves[i] };
 				make_move( moves[i] );
 				
 				if ( get_all_legal_moves().empty() )
@@ -1276,6 +1172,11 @@ public:
 
 				unmake_move();
 				++checks;
+			}
+
+			if ( check == true )
+			{
+				moves.erase( moves.begin() + i-- );
 			}
 		}
 		
@@ -1455,7 +1356,7 @@ public:
 int main()
 {
 	position p{};
-	std::cout << p.perft( 4 ) << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
+	std::cout << p.perft( 4 ) << std::dec << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
 
 	//auto moves{ p.get_all_moves() }; //p.get_pawn_moves( p.get_pawn_board() ) };
 
