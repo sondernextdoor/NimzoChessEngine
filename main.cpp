@@ -96,6 +96,11 @@ struct move
 	piece_type type{};
 	bool capture{};
 	piece_type captured_type{};
+
+	bool operator == ( move m )
+	{
+		return ( m.from & from && m.to & to && m.type == type && m.capture == capture && m.captured_type == captured_type );
+	}
 };
 
 uint64_t mask_rank[8]
@@ -221,7 +226,7 @@ public:
 	{
 		return to_move == e_white ? boards[e_white_pawn] : boards[e_black_pawn];
 	}
-	
+
 	bitboard& get_enemy_pawn_board()
 	{
 		return to_move == e_white ? boards[e_black_pawn] : boards[e_white_pawn];
@@ -231,7 +236,7 @@ public:
 	{
 		return to_move == e_white ? boards[e_white_knight] : boards[e_black_knight];
 	}
-	
+
 	bitboard& get_enemy_knight_board()
 	{
 		return to_move == e_white ? boards[e_black_knight] : boards[e_white_knight];
@@ -241,7 +246,7 @@ public:
 	{
 		return to_move == e_white ? boards[e_white_bishop] : boards[e_black_bishop];
 	}
-	
+
 	bitboard& get_enemy_bishop_board()
 	{
 		return to_move == e_white ? boards[e_black_bishop] : boards[e_white_bishop];
@@ -251,7 +256,7 @@ public:
 	{
 		return to_move == e_white ? boards[e_white_rook] : boards[e_black_rook];
 	}
-	
+
 	bitboard& get_enemy_rook_board()
 	{
 		return to_move == e_white ? boards[e_black_rook] : boards[e_white_rook];
@@ -261,7 +266,7 @@ public:
 	{
 		return to_move == e_white ? boards[e_white_queen] : boards[e_black_queen];
 	}
-	
+
 	bitboard& get_enemy_queen_board()
 	{
 		return to_move == e_white ? boards[e_black_queen] : boards[e_white_queen];
@@ -271,7 +276,7 @@ public:
 	{
 		return to_move == e_white ? boards[e_white_king] : boards[e_black_king];
 	}
-	
+
 	bitboard& get_enemy_king_board()
 	{
 		return to_move == e_white ? boards[e_black_king] : boards[e_white_king];
@@ -285,7 +290,7 @@ public:
 		pieces |= boards[( to_move == e_white ? e_white_rook : e_black_rook )];
 		pieces |= boards[( to_move == e_white ? e_white_queen : e_black_queen )];
 		pieces |= boards[( to_move == e_white ? e_white_king : e_black_king )];
-	
+
 		return pieces;
 	}
 
@@ -583,7 +588,7 @@ public:
 
 		king_moves &= ~friendly_pieces;
 
-		while( king_moves )
+		while ( king_moves )
 		{
 			move m{};
 			m.from |= ( 1ull << _bitscanf( pos ) );
@@ -708,15 +713,15 @@ public:
 		bitboard friendly_pieces{ get_all_friendly_pieces() };
 		bitboard enemy_pieces{ get_all_enemy_pieces() };
 
-		board_moves.push_back( pos >> 8 & ~friendly_pieces & ~enemy_pieces );
+		board_moves.push_back( ( pos >> 8 & ~friendly_pieces ) & ~enemy_pieces );
 
 		if ( pos & mask_rank[e_rank_7] )
 		{
-			board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+			board_moves.push_back( ( board_moves.back() >> 8 & ~friendly_pieces ) & ~enemy_pieces );
 		}
 
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & enemy_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & enemy_pieces );
+		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 9 & enemy_pieces );
+		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 7 & enemy_pieces );
 
 		for ( size_t i = 0; i < board_moves.size(); i++ )
 		{
@@ -842,7 +847,7 @@ public:
 			moves.push_back( m );
 			knight_moves = BitOperations::PopLSB( knight_moves );
 		}
-		
+
 		return moves;
 	}
 
@@ -916,7 +921,7 @@ public:
 	{
 		std::vector<move> moves{};
 		bitboard result = magic.GetBishopAttacks( index, occ ) & ~get_all_friendly_pieces();
-		
+
 		while ( result )
 		{
 			move m{};
@@ -1160,11 +1165,11 @@ public:
 			bool enemy_check{ is_king_in_check() };
 			unmake_move();
 
-			if ( enemy_check && to_move == e_black)
+			if ( enemy_check && to_move == e_black )
 			{
 				const auto& m{ moves[i] };
 				make_move( moves[i] );
-				
+
 				if ( get_all_legal_moves().empty() )
 				{
 					++checkmates;
@@ -1179,7 +1184,7 @@ public:
 				moves.erase( moves.begin() + i-- );
 			}
 		}
-		
+
 		return moves;
 	}
 
@@ -1198,82 +1203,82 @@ public:
 
 		switch ( _move.type )
 		{
-			case e_pawn:
-			{
-				bitboard& pawn_board{ get_pawn_board() };
-				pawn_board &= ~_move.from;
-				pawn_board |= _move.to;
-			} break;
+		case e_pawn:
+		{
+			bitboard& pawn_board{ get_pawn_board() };
+			pawn_board &= ~_move.from;
+			pawn_board |= _move.to;
+		} break;
 
-			case e_knight:
-			{
-				bitboard& knight_board{ get_knight_board() };
-				knight_board &= ~_move.from;
-				knight_board |= _move.to;
-			} break;
-				
-			case e_bishop:
-			{
-				bitboard& bishop_board{ get_bishop_board() };
-				bishop_board &= ~_move.from;
-				bishop_board |= _move.to;
-			} break;
+		case e_knight:
+		{
+			bitboard& knight_board{ get_knight_board() };
+			knight_board &= ~_move.from;
+			knight_board |= _move.to;
+		} break;
 
-			case e_rook:
-			{
-				bitboard& rook_board{ get_rook_board() };
-				rook_board &= ~_move.from;
-				rook_board |= _move.to;
-			} break;
+		case e_bishop:
+		{
+			bitboard& bishop_board{ get_bishop_board() };
+			bishop_board &= ~_move.from;
+			bishop_board |= _move.to;
+		} break;
 
-			case e_queen:
-			{
-				bitboard& queen_board{ get_queen_board() };
-				queen_board &= ~_move.from;
-				queen_board |= _move.to;
-			} break;
+		case e_rook:
+		{
+			bitboard& rook_board{ get_rook_board() };
+			rook_board &= ~_move.from;
+			rook_board |= _move.to;
+		} break;
 
-			case e_king:
-			{
-				bitboard& king_board{ get_king_board() };
-				king_board &= ~_move.from;
-				king_board |= _move.to;
-			} break;
+		case e_queen:
+		{
+			bitboard& queen_board{ get_queen_board() };
+			queen_board &= ~_move.from;
+			queen_board |= _move.to;
+		} break;
+
+		case e_king:
+		{
+			bitboard& king_board{ get_king_board() };
+			king_board &= ~_move.from;
+			king_board |= _move.to;
+		} break;
 		}
 
 		if ( _move.capture == true )
 		{
 			switch ( _move.captured_type )
 			{
-				case e_pawn:
-				{
-					get_enemy_pawn_board() &= ~_move.to;
-				} break;
+			case e_pawn:
+			{
+				get_enemy_pawn_board() &= ~_move.to;
+			} break;
 
-				case e_knight:
-				{
-					get_enemy_knight_board() &= ~_move.to;
-				} break;
+			case e_knight:
+			{
+				get_enemy_knight_board() &= ~_move.to;
+			} break;
 
-				case e_bishop:
-				{
-					get_enemy_bishop_board() &= ~_move.to;
-				} break;
+			case e_bishop:
+			{
+				get_enemy_bishop_board() &= ~_move.to;
+			} break;
 
-				case e_rook:
-				{
-					get_enemy_rook_board() &= ~_move.to;
-				} break;
+			case e_rook:
+			{
+				get_enemy_rook_board() &= ~_move.to;
+			} break;
 
-				case e_queen:
-				{
-					get_enemy_queen_board() &= ~_move.to;
-				} break;
+			case e_queen:
+			{
+				get_enemy_queen_board() &= ~_move.to;
+			} break;
 
-				case e_king:
-				{
-					get_enemy_king_board() &= ~_move.to;
-				} break;
+			case e_king:
+			{
+				get_enemy_king_board() &= ~_move.to;
+			} break;
 			}
 		}
 
@@ -1300,7 +1305,7 @@ public:
 
 		auto moves{ get_all_moves() };
 
-		for ( auto m : moves ) 
+		for ( auto m : moves )
 		{
 			make_move( m );
 
@@ -1326,6 +1331,20 @@ public:
 	int captures{};
 	std::vector<move> move_list{};
 
+	struct _s
+	{
+		int count{};
+		piece_type type{};
+		piece_type captured_type{};
+
+		void operator ++ ()
+		{
+			count += 1;
+		}
+	};
+
+	std::unordered_map<std::string, _s> capture_map{};
+
 	int64_t perft( uint8_t depth )
 	{
 		if ( depth == 0 )
@@ -1336,13 +1355,18 @@ public:
 		int64_t count{ 0 };
 		auto moves{ get_all_legal_moves() };
 
-		for( move m : moves )
+		for ( move m : moves )
 		{
 			move_list.push_back( m );
 			make_move( m );
 
 			if ( m.capture )
 			{
+				std::string s{ square_id[_bitscanf( m.from )] + square_id[_bitscanf( m.to )] };
+				++capture_map[s];
+				capture_map[s].type = m.type;
+				capture_map[s].captured_type = m.captured_type;
+				
 				++captures;
 			}
 
@@ -1352,12 +1376,40 @@ public:
 
 		return count;
 	}
+
+	void perftdiv( uint8_t depth )
+	{
+		uint64_t nodes{};
+		uint64_t pf{};
+
+		auto moves{ get_all_legal_moves() };
+
+		for ( move m : moves )
+		{
+			//std::cout << square_id[_bitscanf( m.from )] << square_id[_bitscanf( m.to )];
+
+			make_move( m );
+			pf = perft( depth - 1 );
+			//std::cout << ": " << pf << " moves\n";
+			nodes += pf;
+			unmake_move();
+		}
+
+		//std::cout << "\nTotal: " << nodes << " moves\n";
+	}
 };
+
 int main()
 {
 	position p{};
-	std::cout << p.perft( 4 ) << std::dec << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
+	std::cout << std::dec << p.perft( 4 ) << " moves analyzed\n";
 
+	for ( auto it = p.capture_map.begin(); it != p.capture_map.end(); ++it )
+	{
+		std::cout << it->first << ": " << it->second.count << "\nPiece: " << type_to_string( it->second.type ) << "\nCaptured Piece: " << type_to_string( it->second.captured_type ) << std::endl;
+	}
+
+	std::cout << std::dec << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
 	//auto moves{ p.get_all_moves() }; //p.get_pawn_moves( p.get_pawn_board() ) };
 
 	//for ( auto b : moves )
