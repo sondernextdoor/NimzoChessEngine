@@ -96,6 +96,11 @@ struct move
 	piece_type type{};
 	bool capture{};
 	piece_type captured_type{};
+
+	bool operator == ( move m )
+	{
+		return ( m.from & from && m.to & to && m.type == type && m.capture == capture && m.captured_type == captured_type );
+	}
 };
 
 uint64_t mask_rank[8]
@@ -708,15 +713,15 @@ public:
 		bitboard friendly_pieces{ get_all_friendly_pieces() };
 		bitboard enemy_pieces{ get_all_enemy_pieces() };
 
-		board_moves.push_back( pos >> 8 & ~friendly_pieces & ~enemy_pieces );
+		board_moves.push_back( ( pos >> 8 & ~friendly_pieces ) & ~enemy_pieces );
 
 		if ( pos & mask_rank[e_rank_7] )
 		{
-			board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
+			board_moves.push_back( ( board_moves.back() >> 8 & ~friendly_pieces ) & ~enemy_pieces );
 		}
 
-		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & enemy_pieces );
-		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & enemy_pieces );
+		board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 9 & enemy_pieces );
+		board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 7 & enemy_pieces );
 
 		for ( size_t i = 0; i < board_moves.size(); i++ )
 		{
@@ -1352,12 +1357,34 @@ public:
 
 		return count;
 	}
+	
+	void perftdiv( uint8_t depth )
+	{
+		uint64_t nodes{};
+		uint64_t pf{};
+
+		auto moves{ get_all_legal_moves() };
+
+		for ( move m : moves )
+		{
+			std::cout << square_id[_bitscanf( m.from )] << square_id[_bitscanf( m.to )] << " " << to_move;
+
+			make_move( m );
+			pf = perft( depth - 1 );
+			std::cout << ": " << pf << " moves\n";
+			nodes += pf;
+			unmake_move();
+		}
+
+		std::cout << "\nTotal: " << nodes << " moves\n";
+	}
 };
+
 int main()
 {
 	position p{};
-	std::cout << p.perft( 4 ) << std::dec << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
-
+	p.perftdiv( 4 );
+	//std::cout << std::dec << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
 	//auto moves{ p.get_all_moves() }; //p.get_pawn_moves( p.get_pawn_board() ) };
 
 	//for ( auto b : moves )
