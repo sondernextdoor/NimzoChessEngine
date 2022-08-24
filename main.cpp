@@ -96,6 +96,8 @@ struct move
 	piece_type type{};
 	bool capture{};
 	piece_type captured_type{};
+	bool short_castle{};
+	bool long_castle{};
 
 	bool operator == ( move m )
 	{
@@ -151,6 +153,26 @@ uint64_t clear_file[8]
 	0b1111111011111110111111101111111011111110111111101111111011111110
 };
 
+uint64_t short_castle_white
+{
+	0b0000000000000000000000000000000000000000000000000000000001110000
+};
+
+uint64_t long_castle_white
+{
+	0b0000000000000000000000000000000000000000000000000000000000011100
+};
+
+uint64_t short_castle_black
+{
+	0b0000111000000000000000000000000000000000000000000000000000000000
+};
+
+uint64_t long_castle_black
+{
+	0b0011100000000000000000000000000000000000000000000000000000000000
+};
+
 std::string type_to_string( piece_type type )
 {
 	switch ( type )
@@ -201,6 +223,11 @@ private:
 	std::vector<std::tuple<std::vector<bitboard>, move>> cache{};
 	bool magic_initialized{};
 
+	bool white_short_castling_rights{ true };
+	bool white_long_castling_rights{ true };
+	bool black_short_castling_rights{ true };
+	bool black_long_castling_rights{ true };
+
 	bitboard boards[12]
 	{
 		0b0000000000000000000000000000000000000000000000001111111100000000, // white pawns		- 0
@@ -221,6 +248,10 @@ private:
 	move alpha_move{};
 
 public:
+
+	int checks{};
+	int captures{};
+	std::vector<move> move_list{};
 
 	bitboard& get_pawn_board()
 	{
@@ -566,6 +597,52 @@ public:
 		return attacks;
 	}
 
+	bool can_castle_short()
+	{
+		bool castling_rights{ to_move == e_white ? white_short_castling_rights : black_short_castling_rights };
+		bitboard castle_mask{ to_move == e_white ? short_castle_white : short_castle_black };
+
+		if ( castling_rights == false || get_attacks( true ) & castle_mask || ( get_all_pieces() & ~get_king_board() ) & castle_mask )
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	bool can_castle_long()
+	{
+		bool castling_rights{ to_move == e_white ? white_long_castling_rights : black_long_castling_rights };
+		bitboard castle_mask{ to_move == e_white ? long_castle_white : long_castle_black };
+
+		if ( castling_rights == false || get_attacks( true ) & castle_mask || ( get_all_pieces() & ~get_king_board() ) & castle_mask )
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	bitboard king_short_castle_board()
+	{
+		return 1ull << ( _bitscanf( get_king_board() ) + 2 );
+	}
+
+	bitboard king_long_castle_board()
+	{
+		return 1ull << ( _bitscanf( get_king_board() ) - 2 );
+	}
+
+	bitboard rook_short_castle_board()
+	{
+		return king_short_castle_board() >> 1;
+	}
+
+	bitboard rook_long_castle_board()
+	{
+		return king_short_castle_board() << 1;
+	}
+
 	std::vector<move> get_king_moves( bitboard pos )
 	{
 		std::vector<move> moves{};
@@ -587,6 +664,28 @@ public:
 		bitboard king_moves{ spot_1 | spot_2 | spot_3 | spot_4 | spot_5 | spot_6 | spot_7 | spot_8 };
 
 		king_moves &= ~friendly_pieces;
+		
+		if ( can_castle_short() )
+		{
+			move m{};
+			m.from |= ( 1ull << _bitscanf( pos ) );
+			m.to = king_short_castle_board();
+			m.type = e_king;
+			m.short_castle = true;
+
+			moves.push_back( m );
+		}
+
+		if ( can_castle_long() )
+		{
+			move m{};
+			m.from |= ( 1ull << _bitscanf( pos ) );
+			m.to = king_long_castle_board();
+			m.type = e_king;
+			m.long_castle = true;
+
+			moves.push_back( m );
+		}
 
 		while ( king_moves )
 		{
@@ -665,7 +764,7 @@ public:
 
 			m.type = e_pawn;
 
-			if ( m.to & enemy_pieces )
+			if ( m.to & get_all_enemy_pieces() )
 			{
 				if ( m.from << 8 == m.to || m.from << 16 == m.to )
 				{
@@ -1020,6 +1119,37 @@ public:
 			m.from |= ( 1ull << index );
 			m.to |= ( 1ull << _bitscanf( result ) );
 			m.type = e_queen;
+
+			if ( m.to & get_all_enemy_pieces() )
+			{
+				m.capture = true;
+
+				if ( m.to & get_enemy_pawn_board() )
+				{
+					m.captured_type = e_pawn;
+				}
+				else if ( m.to & get_enemy_knight_board() )
+				{
+					m.captured_type = e_knight;
+				}
+				else if ( m.to & get_enemy_bishop_board() )
+				{
+					m.captured_type = e_bishop;
+				}
+				else if ( m.to & get_enemy_rook_board() )
+				{
+					m.captured_type = e_rook;
+				}
+				else if ( m.to & get_enemy_queen_board() )
+				{
+					m.captured_type = e_queen;
+				}
+				else if ( m.to & get_enemy_king_board() )
+				{
+					m.capture = false;
+				}
+			}
+
 			moves.push_back( m );
 			result = BitOperations::PopLSB( result );
 		}
@@ -1203,47 +1333,108 @@ public:
 
 		switch ( _move.type )
 		{
-		case e_pawn:
-		{
-			bitboard& pawn_board{ get_pawn_board() };
-			pawn_board &= ~_move.from;
-			pawn_board |= _move.to;
-		} break;
+			case e_pawn:
+			{
+				bitboard& pawn_board{ get_pawn_board() };
+				pawn_board &= ~_move.from;
+				pawn_board |= _move.to;
+			} break;
 
-		case e_knight:
-		{
-			bitboard& knight_board{ get_knight_board() };
-			knight_board &= ~_move.from;
-			knight_board |= _move.to;
-		} break;
+			case e_knight:
+			{
+				bitboard& knight_board{ get_knight_board() };
+				knight_board &= ~_move.from;
+				knight_board |= _move.to;
+			} break;
 
-		case e_bishop:
-		{
-			bitboard& bishop_board{ get_bishop_board() };
-			bishop_board &= ~_move.from;
-			bishop_board |= _move.to;
-		} break;
+			case e_bishop:
+			{
+				bitboard& bishop_board{ get_bishop_board() };
+				bishop_board &= ~_move.from;
+				bishop_board |= _move.to;
+			} break;
 
-		case e_rook:
-		{
-			bitboard& rook_board{ get_rook_board() };
-			rook_board &= ~_move.from;
-			rook_board |= _move.to;
-		} break;
+			case e_rook:
+			{
+				if ( to_move == e_white && ( white_short_castling_rights || white_long_castling_rights ) )
+				{
+					if ( _move.from & 0b0000000000000000000000000000000000000000000000000000000000000001 )
+					{
+						white_short_castling_rights = false;
+					}
+					else if ( _move.from & 0b0000000000000000000000000000000000000000000000000000000010000000 )
+					{
+						white_long_castling_rights = false;
+					}
+				}
+				else if ( to_move == e_black && ( black_short_castling_rights || black_long_castling_rights ) )
+				{
+					if ( _move.from & 0b0000000100000000000000000000000000000000000000000000000000000000 )
+					{
+						black_short_castling_rights = false;
+					}
+					else if ( _move.from & 0b1000000000000000000000000000000000000000000000000000000000000000 )
+					{
+						black_long_castling_rights = false;
+					}
+				}
 
-		case e_queen:
-		{
-			bitboard& queen_board{ get_queen_board() };
-			queen_board &= ~_move.from;
-			queen_board |= _move.to;
-		} break;
+				bitboard& rook_board{ get_rook_board() };
+				rook_board &= ~_move.from;
+				rook_board |= _move.to;
+			} break;
 
-		case e_king:
-		{
-			bitboard& king_board{ get_king_board() };
-			king_board &= ~_move.from;
-			king_board |= _move.to;
-		} break;
+			case e_queen:
+			{
+				bitboard& queen_board{ get_queen_board() };
+				queen_board &= ~_move.from;
+				queen_board |= _move.to;
+			} break;
+
+			case e_king:
+			{
+				bitboard& king_board{ get_king_board() };
+				king_board &= ~_move.from;
+				king_board |= _move.to;
+			
+				if ( to_move == e_white && ( white_short_castling_rights || white_long_castling_rights ) )
+				{
+					white_short_castling_rights = false;
+					white_long_castling_rights = false;
+				}
+				else if ( to_move == e_black && ( black_short_castling_rights || black_long_castling_rights ) )
+				{
+					black_short_castling_rights = false;
+					black_long_castling_rights = false;
+				}
+
+				if ( _move.short_castle == true )
+				{
+					if ( to_move == e_white )
+					{
+						get_rook_board() &= ~( 1ull << 7 );
+						get_rook_board() |= ( 1ull << 5 );
+					}
+					else
+					{
+						get_rook_board() &= ~( 1ull << 63 );
+						get_rook_board() |= ( 1ull << 61 );
+					}
+				}
+				else if ( _move.long_castle == true )
+				{
+					if ( to_move == e_white )
+					{
+						get_rook_board() &= ~( 1ull << 0 );
+						get_rook_board() |= ( 1ull << 3 );
+					}
+					else
+					{
+						get_rook_board() &= ~( 1ull << 56 );
+						get_rook_board() |= ( 1ull << 59 );
+					}
+				}
+			} break;
 		}
 
 		if ( _move.capture == true )
@@ -1327,23 +1518,6 @@ public:
 
 		return alpha;
 	}
-	int checks{};
-	int captures{};
-	std::vector<move> move_list{};
-
-	struct _s
-	{
-		int count{};
-		piece_type type{};
-		piece_type captured_type{};
-
-		void operator ++ ()
-		{
-			count += 1;
-		}
-	};
-
-	std::unordered_map<std::string, _s> capture_map{};
 
 	int64_t perft( uint8_t depth )
 	{
@@ -1362,11 +1536,6 @@ public:
 
 			if ( m.capture )
 			{
-				std::string s{ square_id[_bitscanf( m.from )] + square_id[_bitscanf( m.to )] };
-				++capture_map[s];
-				capture_map[s].type = m.type;
-				capture_map[s].captured_type = m.captured_type;
-				
 				++captures;
 			}
 
@@ -1379,44 +1548,23 @@ public:
 
 	void perftdiv( uint8_t depth )
 	{
-		uint64_t nodes{};
 		uint64_t pf{};
 
 		auto moves{ get_all_legal_moves() };
 
 		for ( move m : moves )
 		{
-			//std::cout << square_id[_bitscanf( m.from )] << square_id[_bitscanf( m.to )];
+			std::cout << square_id[_bitscanf( m.from )] << square_id[_bitscanf( m.to )];
 
 			make_move( m );
 			pf = perft( depth - 1 );
-			//std::cout << ": " << pf << " moves\n";
-			nodes += pf;
+			std::cout << ": " << pf << " moves\n";
 			unmake_move();
 		}
-
-		//std::cout << "\nTotal: " << nodes << " moves\n";
 	}
 };
 
 int main()
 {
 	position p{};
-	std::cout << std::dec << p.perft( 4 ) << " moves analyzed\n";
-
-	for ( auto it = p.capture_map.begin(); it != p.capture_map.end(); ++it )
-	{
-		std::cout << it->first << ": " << it->second.count << "\nPiece: " << type_to_string( it->second.type ) << "\nCaptured Piece: " << type_to_string( it->second.captured_type ) << std::endl;
-	}
-
-	std::cout << std::dec << "\nchecks: " << p.checks << "\ncaptures: " << p.captures << "\ncheckmates: " << p.checkmates;
-	//auto moves{ p.get_all_moves() }; //p.get_pawn_moves( p.get_pawn_board() ) };
-
-	//for ( auto b : moves )
-	//{
-		//std::cout << type_to_string( b.type ) << ": " << square_id[b.from] << "->" << square_id[b.to] << std::endl;
-		//print_board( squares[b.from] );
-	//}
-
-	getchar();
 }
