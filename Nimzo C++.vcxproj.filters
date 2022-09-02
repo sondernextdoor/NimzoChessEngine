@@ -19,6 +19,9 @@
     <Filter Include="Source Files\magic">
       <UniqueIdentifier>{0d5f04e7-df56-422c-9d88-814c4a1f0134}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\uci">
+      <UniqueIdentifier>{0bb0652e-d19b-4728-a5e6-85f7a22a1e5c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -94,6 +97,9 @@
     </ClInclude>
     <ClInclude Include="magic\Include\Typedefs.hpp">
       <Filter>Header Files\magic</Filter>
+    </ClInclude>
+    <ClInclude Include="uci.h">
+      <Filter>Header Files\uci</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

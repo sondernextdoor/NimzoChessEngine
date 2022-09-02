@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <FastMagicBitboards.hpp>
+#include <Windows.h>
 
 typedef uint64_t bitboard;
 typedef uint64_t square;
@@ -219,7 +220,7 @@ struct position
 {
 private:
 
-	color to_move{ e_white };
+	color to_move{ e_black };
 	std::vector<std::tuple<std::vector<bitboard>, move>> cache{};
 	bool magic_initialized{};
 
@@ -252,6 +253,11 @@ public:
 	int checks{};
 	int captures{};
 	std::vector<move> move_list{};
+
+	const color& side_to_move() const
+	{
+		return to_move;
+	}
 
 	bitboard& get_pawn_board()
 	{
@@ -313,6 +319,66 @@ public:
 		return to_move == e_white ? boards[e_black_king] : boards[e_white_king];
 	}
 
+	bitboard& get_white_pawn_board()
+	{
+		return boards[e_white_pawn];
+	}
+
+	bitboard& get_black_pawn_board()
+	{
+		return boards[e_black_pawn];
+	}
+
+	bitboard& get_white_knight_board()
+	{
+		return boards[e_white_knight];
+	}
+
+	bitboard& get_black_knight_board()
+	{
+		return boards[e_black_knight];
+	}
+
+	bitboard& get_white_bishop_board()
+	{
+		return boards[e_white_bishop];
+	}
+
+	bitboard& get_black_bishop_board()
+	{
+		return boards[e_black_bishop];
+	}
+
+	bitboard& get_white_rook_board()
+	{
+		return boards[e_white_rook];
+	}
+
+	bitboard& get_black_rook_board()
+	{
+		return boards[e_black_rook];
+	}
+
+	bitboard& get_white_queen_board()
+	{
+		return boards[e_white_queen];
+	}
+
+	bitboard& get_black_queen_board()
+	{
+		return boards[e_black_queen];
+	}
+
+	bitboard& get_white_king_board()
+	{
+		return boards[e_white_king];
+	}
+
+	bitboard& get_black_king_board()
+	{
+		return boards[e_black_king];
+	}
+
 	bitboard get_all_friendly_pieces() const
 	{
 		bitboard pieces{ boards[( to_move == e_white ? e_white_pawn : e_black_pawn )] };
@@ -340,6 +406,16 @@ public:
 	bitboard get_all_pieces() const
 	{
 		return get_all_friendly_pieces() | get_all_enemy_pieces();
+	}
+
+	bitboard get_all_white_pieces() const
+	{
+		return to_move == e_white ? get_all_friendly_pieces() : get_all_enemy_pieces();
+	}
+
+	bitboard get_all_black_pieces() const
+	{
+		return to_move == e_black ? get_all_friendly_pieces() : get_all_enemy_pieces();
 	}
 
 	bitboard get_pawn_attacks( bitboard pos, bool enemy = false )
@@ -370,8 +446,8 @@ public:
 					board_moves.push_back( board_moves.back() << 8 & ~friendly_pieces & ~enemy_pieces );
 				}
 
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) << 9 & enemy_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 7 & enemy_pieces );
+				board_moves.push_back( ( pos & clear_file[e_file_H] ) << 9 );
+				board_moves.push_back( ( pos & clear_file[e_file_A] ) << 7 );
 			}
 			else
 			{
@@ -382,8 +458,8 @@ public:
 					board_moves.push_back( board_moves.back() >> 8 & ~friendly_pieces & ~enemy_pieces );
 				}
 
-				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 & enemy_pieces );
-				board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 & enemy_pieces );
+				board_moves.push_back( ( pos & clear_file[e_file_H] ) >> 9 );
+				board_moves.push_back( ( pos & clear_file[e_file_A] ) >> 7 );
 			}
 
 			pos = BitOperations::PopLSB( pos );
@@ -663,8 +739,9 @@ public:
 
 		bitboard king_moves{ spot_1 | spot_2 | spot_3 | spot_4 | spot_5 | spot_6 | spot_7 | spot_8 };
 
+
 		king_moves &= ~friendly_pieces;
-		
+
 		if ( can_castle_short() )
 		{
 			move m{};
@@ -1291,23 +1368,17 @@ public:
 			std::vector<move> white_moves{};
 
 			make_move( moves[i] );
+
+			if ( get_attacks() & get_enemy_king_board() )
+			{
+				moves.erase( moves.begin() + i-- );
+				unmake_move();
+				continue;
+			}
+
 			bool check{ is_king_in_check( true ) };
 			bool enemy_check{ is_king_in_check() };
 			unmake_move();
-
-			if ( enemy_check && to_move == e_black )
-			{
-				const auto& m{ moves[i] };
-				make_move( moves[i] );
-
-				if ( get_all_legal_moves().empty() )
-				{
-					++checkmates;
-				}
-
-				unmake_move();
-				++checks;
-			}
 
 			if ( check == true )
 			{
@@ -1319,6 +1390,7 @@ public:
 	}
 
 	int checkmates{};
+	std::vector<move> moves_played{};
 
 	void make_move( move _move )
 	{
@@ -1333,108 +1405,108 @@ public:
 
 		switch ( _move.type )
 		{
-			case e_pawn:
-			{
-				bitboard& pawn_board{ get_pawn_board() };
-				pawn_board &= ~_move.from;
-				pawn_board |= _move.to;
-			} break;
+		case e_pawn:
+		{
+			bitboard& pawn_board{ get_pawn_board() };
+			pawn_board &= ~_move.from;
+			pawn_board |= _move.to;
+		} break;
 
-			case e_knight:
-			{
-				bitboard& knight_board{ get_knight_board() };
-				knight_board &= ~_move.from;
-				knight_board |= _move.to;
-			} break;
+		case e_knight:
+		{
+			bitboard& knight_board{ get_knight_board() };
+			knight_board &= ~_move.from;
+			knight_board |= _move.to;
+		} break;
 
-			case e_bishop:
-			{
-				bitboard& bishop_board{ get_bishop_board() };
-				bishop_board &= ~_move.from;
-				bishop_board |= _move.to;
-			} break;
+		case e_bishop:
+		{
+			bitboard& bishop_board{ get_bishop_board() };
+			bishop_board &= ~_move.from;
+			bishop_board |= _move.to;
+		} break;
 
-			case e_rook:
+		case e_rook:
+		{
+			if ( to_move == e_white && ( white_short_castling_rights || white_long_castling_rights ) )
 			{
-				if ( to_move == e_white && ( white_short_castling_rights || white_long_castling_rights ) )
-				{
-					if ( _move.from & 0b0000000000000000000000000000000000000000000000000000000000000001 )
-					{
-						white_short_castling_rights = false;
-					}
-					else if ( _move.from & 0b0000000000000000000000000000000000000000000000000000000010000000 )
-					{
-						white_long_castling_rights = false;
-					}
-				}
-				else if ( to_move == e_black && ( black_short_castling_rights || black_long_castling_rights ) )
-				{
-					if ( _move.from & 0b0000000100000000000000000000000000000000000000000000000000000000 )
-					{
-						black_short_castling_rights = false;
-					}
-					else if ( _move.from & 0b1000000000000000000000000000000000000000000000000000000000000000 )
-					{
-						black_long_castling_rights = false;
-					}
-				}
-
-				bitboard& rook_board{ get_rook_board() };
-				rook_board &= ~_move.from;
-				rook_board |= _move.to;
-			} break;
-
-			case e_queen:
-			{
-				bitboard& queen_board{ get_queen_board() };
-				queen_board &= ~_move.from;
-				queen_board |= _move.to;
-			} break;
-
-			case e_king:
-			{
-				bitboard& king_board{ get_king_board() };
-				king_board &= ~_move.from;
-				king_board |= _move.to;
-			
-				if ( to_move == e_white && ( white_short_castling_rights || white_long_castling_rights ) )
+				if ( _move.from & 0b0000000000000000000000000000000000000000000000000000000000000001 )
 				{
 					white_short_castling_rights = false;
+				}
+				else if ( _move.from & 0b0000000000000000000000000000000000000000000000000000000010000000 )
+				{
 					white_long_castling_rights = false;
 				}
-				else if ( to_move == e_black && ( black_short_castling_rights || black_long_castling_rights ) )
+			}
+			else if ( to_move == e_black && ( black_short_castling_rights || black_long_castling_rights ) )
+			{
+				if ( _move.from & 0b0000000100000000000000000000000000000000000000000000000000000000 )
 				{
 					black_short_castling_rights = false;
+				}
+				else if ( _move.from & 0b1000000000000000000000000000000000000000000000000000000000000000 )
+				{
 					black_long_castling_rights = false;
 				}
+			}
 
-				if ( _move.short_castle == true )
+			bitboard& rook_board{ get_rook_board() };
+			rook_board &= ~_move.from;
+			rook_board |= _move.to;
+		} break;
+
+		case e_queen:
+		{
+			bitboard& queen_board{ get_queen_board() };
+			queen_board &= ~_move.from;
+			queen_board |= _move.to;
+		} break;
+
+		case e_king:
+		{
+			bitboard& king_board{ get_king_board() };
+			king_board &= ~_move.from;
+			king_board |= _move.to;
+
+			if ( to_move == e_white && ( white_short_castling_rights || white_long_castling_rights ) )
+			{
+				white_short_castling_rights = false;
+				white_long_castling_rights = false;
+			}
+			else if ( to_move == e_black && ( black_short_castling_rights || black_long_castling_rights ) )
+			{
+				black_short_castling_rights = false;
+				black_long_castling_rights = false;
+			}
+
+			if ( _move.short_castle == true )
+			{
+				if ( to_move == e_white )
 				{
-					if ( to_move == e_white )
-					{
-						get_rook_board() &= ~( 1ull << 7 );
-						get_rook_board() |= ( 1ull << 5 );
-					}
-					else
-					{
-						get_rook_board() &= ~( 1ull << 63 );
-						get_rook_board() |= ( 1ull << 61 );
-					}
+					get_rook_board() &= ~( 1ull << 7 );
+					get_rook_board() |= ( 1ull << 5 );
 				}
-				else if ( _move.long_castle == true )
+				else
 				{
-					if ( to_move == e_white )
-					{
-						get_rook_board() &= ~( 1ull << 0 );
-						get_rook_board() |= ( 1ull << 3 );
-					}
-					else
-					{
-						get_rook_board() &= ~( 1ull << 56 );
-						get_rook_board() |= ( 1ull << 59 );
-					}
+					get_rook_board() &= ~( 1ull << 63 );
+					get_rook_board() |= ( 1ull << 61 );
 				}
-			} break;
+			}
+			else if ( _move.long_castle == true )
+			{
+				if ( to_move == e_white )
+				{
+					get_rook_board() &= ~( 1ull << 0 );
+					get_rook_board() |= ( 1ull << 3 );
+				}
+				else
+				{
+					get_rook_board() &= ~( 1ull << 56 );
+					get_rook_board() |= ( 1ull << 59 );
+				}
+			}
+		} break;
 		}
 
 		if ( _move.capture == true )
@@ -1474,6 +1546,7 @@ public:
 		}
 
 		to_move = to_move == e_white ? e_black : e_white;
+		moves_played.push_back( _move );
 	}
 
 	void unmake_move()
@@ -1485,6 +1558,7 @@ public:
 
 		to_move = to_move == e_white ? e_black : e_white;
 		cache.pop_back();
+		moves_played.pop_back();
 	}
 
 	int32_t search( uint16_t depth, int alpha, int beta )
@@ -1562,9 +1636,216 @@ public:
 			unmake_move();
 		}
 	}
+
+	void set_position( std::string fen, const std::vector<std::string>& moves )
+	{
+		for ( int i = 0; i < fen.size(); i++ )
+		{
+			if ( fen[i] == ' ' )
+			{
+				fen.erase( fen.begin() + i-- );
+				continue;
+			}
+		}
+
+		for ( int i = 0; i < 12; i++ )
+		{
+			boards[i] = 0;
+		}
+
+		for ( int i = 0, j = 0; i < fen.size(); i++, j++ )
+		{
+			const char& c{ fen[i] };
+
+			if ( c == '/' )
+			{
+				--j;
+				continue;
+			}
+
+			if ( isdigit( c ) )
+			{
+				--j += std::stoi( std::string( &c ) );
+				continue;
+			}
+
+			if ( c == 'w' )
+			{
+				to_move = e_white;
+				return;
+			}
+			else if ( c == 'b' )
+			{
+				to_move == e_black;
+				return;
+			}
+
+			switch ( c )
+			{
+				case 'R': get_white_rook_board() = ( 1ull << 63 - j ); break;
+				case 'N': get_white_knight_board() = ( 1ull << 63 - j ); break;
+				case 'B': get_white_bishop_board() = ( 1ull << 63 - j ); break;
+				case 'Q': get_white_queen_board() = ( 1ull << 63 - j ); break;
+				case 'K': get_white_king_board() = ( 1ull << 63 - j ); break;
+				case 'P': get_white_pawn_board() = ( 1ull << 63 - j ); break;
+				case 'r': get_black_rook_board() = ( 1ull << 63 - j ); break;
+				case 'n': get_black_knight_board() = ( 1ull << 63 - j ); break;
+				case 'b': get_black_bishop_board() = ( 1ull << 63 - j ); break;
+				case 'q': get_black_queen_board() = ( 1ull << 63 - j ); break;
+				case 'k': get_black_king_board() = ( 1ull << 63 - j ); break;
+				case 'p': get_black_pawn_board() = ( 1ull << 63 - j ); break;
+			}
+		}
+	}
 };
+
+position p{};
+
+#include <random>
+
+__inline int random_integer( int min = 0, int max = 100 )
+{
+	std::random_device random_device{};
+	std::mt19937 rng( random_device() );
+	std::uniform_int_distribution<> dist( min, max );
+
+	return dist( rng );
+}
+
+#include "uci.h"
+uci _uci;
+
+void search( const std::map<uci::command, std::string>* parameters )
+{
+	auto moves{ p.get_all_moves() };
+	auto m{ moves[random_integer( 0, moves.size() - 1 )] };
+	auto s_m{ square_id[p._bitscanf( m.from )].append( square_id[p._bitscanf( m.to )] ) };
+
+	for ( int i = 0; i > s_m.size(); i++ )
+	{
+		s_m[i] = std::tolower( s_m[i] );
+	}
+
+	s_m.append( "\n" );
+	_uci.send_best_move( s_m );
+}
 
 int main()
 {
-	position p{};
+	/*std::vector<std::string> v;
+	p.set_position( "8/8/8/4p1K1/2k1P3/8/8/8 b ", v );
+	std::cout << std::hex << p.get_all_pieces() << std::endl;
+	std::cout << p.get_all_white_pieces() << std::endl;
+	std::cout << p.get_all_black_pieces() << std::endl;
+	getchar();*/
+	
+	_uci.receive_uci.connect( [&] ()
+	{
+	  _uci.send_id( "Juno", "Nicholas Galioto" );
+	  _uci.send_option_uci_limit_strength( false );
+	  _uci.send_uci_ok();
+	} );
+
+	_uci.receive_is_ready.connect( [&] ()
+	{
+	  _uci.send_ready_ok();
+	} );
+
+	_uci.receive_position.connect( [&] ( const std::string& fen, const std::vector<std::string>& moves )
+	{
+		p.set_position( fen, moves );
+	} );
+
+	_uci.receive_go.connect( [&] ( const std::map<uci::command, std::string>& parameters )
+	{
+		CreateThread( nullptr, 0, (LPTHREAD_START_ROUTINE)search, (void*)&parameters, 0, nullptr );
+	} );
+
+	_uci.launch();
 }
+
+// bool b_console{};
+
+/*
+
+bool __stdcall DllMain( void* module_handle, uint32_t reason, void* reserved )
+{
+	if ( b_console == false )
+	{
+		AllocConsole();
+
+		freopen( "conin$", "r", stdin );
+		freopen( "conout$", "w", stdout );
+		freopen( "conout$", "w", stderr );
+
+		std::cout << p.perft( 4 ) << " moves analyzed\n\n";
+		p.perftdiv( 4 );
+		b_console = true;
+	}
+
+	return true;
+}
+
+extern "C"
+{
+	__declspec( dllexport ) bool __stdcall make_user_move( uint32_t from, uint32_t to, uint32_t type, bool capture, uint32_t captured_type, bool short_castle, bool long_castle )
+	{
+		move m{};
+
+		m.from = ( 1ull << from );
+		m.to = ( 1ull << to );
+		m.type = ( piece_type )type;
+		m.capture = capture;
+		m.captured_type = ( piece_type )captured_type;
+		m.short_castle = short_castle;
+		m.long_castle = long_castle;
+
+		auto moves{ p.get_all_legal_moves() };
+		bool found{};
+
+		for ( const auto& _m : moves )
+		{
+			if ( m.from & _m.from && m.to & _m.to && m.type == _m.type )
+			{
+				found = true;
+				break;
+			}
+		}
+
+		if ( found == false )
+		{
+			return false;
+		}
+
+		p.make_move( m );
+		return true;
+	}
+
+	__declspec( dllexport ) bool __stdcall make_engine_move( uint32_t& from, uint32_t& to, bool& capture )
+	{
+		auto moves{ p.get_all_legal_moves() };
+
+		if ( moves.empty() )
+		{
+			return false;
+		}
+
+		auto m = moves[random_integer( 0, moves.size() )];
+
+		from = p._bitscanf( m.from );
+		to = p._bitscanf( m.to );
+		capture = m.capture;
+
+		std::cout << square_id[p._bitscanf( m.from )] << square_id[p._bitscanf( m.to )] << std::endl;
+		std::cout << std::hex << p.get_all_pieces() << std::dec << std::endl;
+		std::cout << std::hex << p.get_attacks( true ) << std::dec << std::endl;
+		p.make_move( m );
+		return true;
+	}
+}
+*/
+//int main()
+//{
+//	position p{};
+//	std::cout << p.perft( 4 );
+//}
